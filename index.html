@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>별똥별 줍기</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jua&family=Gowun+Dodum&display=swap">
+<style>
+  /* 레이아웃: 화면 전체가 밤하늘. 위쪽에 점수판, 가운데 캔버스, 시작/종료 카드는 캔버스 위에 띄움 */
+  :root {
+    --sky-top: #0b0e2b;
+    --sky-bottom: #1d1b4a;
+    --ink: #eef0ff;
+    --muted: #9aa0d6;
+    --star: #ffd75e;
+    --rock: #d0714f;
+    --glass: #7fd6c8;
+    --panel: rgba(16, 18, 52, 0.86);
+    --font-display: "Jua", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+    --font-body: "Gowun Dodum", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+    color-scheme: dark;
+  }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--sky-top);
+    color: var(--ink);
+    font-family: var(--font-body);
+    overflow: hidden;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .app {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 12px;
+    gap: 10px;
+    background: linear-gradient(var(--sky-top), var(--sky-bottom));
+  }
+  .hud {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    max-width: 720px;
+    width: 100%;
+    margin: 0 auto;
+  }
+  .hud h1 {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 1.5rem;
+    margin: 0;
+    color: var(--star);
+    letter-spacing: 0.02em;
+  }
+  .stats { display: flex; gap: 18px; font-variant-numeric: tabular-nums; }
+  .stat { display: flex; flex-direction: column; align-items: flex-end; }
+  .stat .label { font-size: 0.72rem; color: var(--muted); letter-spacing: 0.08em; }
+  .stat .value { font-family: var(--font-display); font-size: 1.35rem; line-height: 1.1; }
+  .lives { color: var(--rock); letter-spacing: 2px; }
+  .stage {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    max-width: 720px;
+    width: 100%;
+    margin: 0 auto;
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: inset 0 0 0 1px rgba(154, 160, 214, 0.18);
+  }
+  canvas { display: block; width: 100%; height: 100%; cursor: none; }
+  .card {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: 16px;
+    background: rgba(8, 10, 32, 0.45);
+  }
+  .card-inner {
+    background: var(--panel);
+    border: 1px solid rgba(255, 215, 94, 0.25);
+    border-radius: 16px;
+    padding: 24px 22px;
+    max-width: 340px;
+    width: 100%;
+    box-sizing: border-box;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .card h2 {
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 2rem;
+    margin: 0;
+    color: var(--star);
+    text-wrap: balance;
+  }
+  .card p { margin: 0; line-height: 1.6; color: var(--ink); }
+  .legend { display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; text-align: left; font-size: 0.92rem; }
+  .legend span:nth-child(odd) { font-family: var(--font-display); }
+  .keys { font-size: 0.82rem; color: var(--muted); }
+  .big { font-family: var(--font-display); font-size: 2.6rem; color: var(--ink); font-variant-numeric: tabular-nums; }
+  button {
+    font: inherit;
+    font-family: var(--font-display);
+    font-size: 1.2rem;
+    padding: 12px 18px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--star);
+    color: #2a2208;
+    cursor: pointer;
+  }
+  button:hover { filter: brightness(1.08); }
+  button:focus-visible { outline: 3px solid var(--glass); outline-offset: 3px; }
+  .new-best { color: var(--glass); font-family: var(--font-display); }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="hud">
+    <h1>별똥별 줍기</h1>
+    <div class="stats">
+      <div class="stat"><span class="label">점수</span><span class="value" id="score">0</span></div>
+      <div class="stat"><span class="label">최고</span><span class="value" id="best">0</span></div>
+      <div class="stat"><span class="label">목숨</span><span class="value lives" id="lives">♥♥♥</span></div>
+    </div>
+  </header>
+  <main class="stage" id="stage">
+    <canvas id="game" aria-label="게임 화면"></canvas>
+    <div class="card" id="startCard">
+      <div class="card-inner">
+        <h2>병에 별을 담아요</h2>
+        <div class="legend">
+          <span style="color:var(--star)">★ 별</span><span>+1점</span>
+          <span style="color:#fff3c4">✦ 금빛 별</span><span>+5점, 가끔 떨어져요</span>
+          <span style="color:var(--rock)">● 운석</span><span>닿으면 목숨 하나 잃어요</span>
+        </div>
+        <p class="keys">← → 또는 A·D 키, 마우스나 손가락으로 움직여요</p>
+        <button id="startBtn" type="button">시작하기</button>
+      </div>
+    </div>
+    <div class="card" id="overCard" hidden>
+      <div class="card-inner">
+        <h2>병이 깨졌어요</h2>
+        <div class="big" id="finalScore">0</div>
+        <p id="overMsg">점을 모았어요</p>
+        <button id="againBtn" type="button">다시 하기</button>
+      </div>
+    </div>
+  </main>
+</div>
+<script>
+(() => {
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const stage = document.getElementById('stage');
+  const $score = document.getElementById('score');
+  const $best = document.getElementById('best');
+  const $lives = document.getElementById('lives');
+  const startCard = document.getElementById('startCard');
+  const overCard = document.getElementById('overCard');
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const COLORS = { star: '#ffd75e', gold: '#fff3c4', rock: '#d0714f', glass: '#7fd6c8' };
+  let W = 0, H = 0, dpr = 1;
+  let bgStars = [];
+
+  function loadBest() { try { return Number(localStorage.getItem('star-catch-best')) || 0; } catch { return 0; } }
+  function saveBest(v) { try { localStorage.setItem('star-catch-best', String(v)); } catch {} }
+
+  const game = {
+    state: 'ready', score: 0, best: loadBest(), lives: 3,
+    items: [], particles: [], elapsed: 0, spawnTimer: 0, shake: 0,
+    jar: { x: 0, w: 74, h: 56, targetX: null },
+  };
+
+  function resize() {
+    const r = stage.getBoundingClientRect();
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    W = r.width; H = r.height;
+    canvas.width = Math.round(W * dpr);
+    canvas.height = Math.round(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    game.jar.w = Math.max(60, Math.min(90, W * 0.14));
+    game.jar.x = Math.min(Math.max(game.jar.x || W / 2, game.jar.w / 2), W - game.jar.w / 2);
+    bgStars = Array.from({ length: Math.round(W * H / 4500) }, () => ({
+      x: Math.random() * W, y: Math.random() * H, r: Math.random() * 1.3 + 0.3, p: Math.random() * Math.PI * 2,
+    }));
+  }
+
+  function updateHud() {
+    $score.textContent = game.score;
+    $best.textContent = game.best;
+    $lives.textContent = '♥'.repeat(game.lives) + '♡'.repeat(Math.max(0, 3 - game.lives));
+  }
+
+  function start() {
+    game.state = 'play'; game.score = 0; game.lives = 3;
+    game.items = []; game.particles = []; game.elapsed = 0; game.spawnTimer = 0.4;
+    game.jar.x = W / 2; game.jar.targetX = null;
+    startCard.hidden = true; overCard.hidden = true;
+    updateHud();
+  }
+
+  function gameOver() {
+    game.state = 'over';
+    const isBest = game.score > game.best;
+    if (isBest) { game.best = game.score; saveBest(game.best); }
+    document.getElementById('finalScore').textContent = game.score;
+    const msg = document.getElementById('overMsg');
+    msg.innerHTML = isBest && game.score > 0 ? '<span class="new-best">새 최고 기록이에요!</span>' : '점을 모았어요. 최고 기록은 ' + game.best + '점이에요.';
+    overCard.hidden = false;
+    updateHud();
+    document.getElementById('againBtn').focus();
+  }
+
+  function spawn() {
+    const t = game.elapsed;
+    const rockChance = Math.min(0.45, 0.18 + t * 0.006);
+    const roll = Math.random();
+    let type = 'star';
+    if (roll < 0.06) type = 'gold';
+    else if (roll < 0.06 + rockChance) type = 'rock';
+    const speed = 150 + Math.min(260, t * 6) + Math.random() * 60;
+    const r = type === 'rock' ? 13 + Math.random() * 7 : type === 'gold' ? 13 : 11;
+    game.items.push({ type, r, x: r + Math.random() * (W - r * 2), y: -r, vy: type === 'gold' ? speed * 1.2 : speed, spin: Math.random() * 6, vr: (Math.random() - 0.5) * 4 });
+  }
+
+  function burst(x, y, color, n) {
+    if (reduceMotion) n = Math.ceil(n / 3);
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2, s = 60 + Math.random() * 180;
+      game.particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 80, life: 0.6 + Math.random() * 0.4, color });
+    }
+  }
+
+  const keys = { left: false, right: false };
+  function update(dt) {
+    for (const s of game.particles) { s.x += s.vx * dt; s.y += s.vy * dt; s.vy += 400 * dt; s.life -= dt; }
+    game.particles = game.particles.filter(s => s.life > 0);
+    game.shake = Math.max(0, game.shake - dt * 3);
+    if (game.state !== 'play') return;
+
+    game.elapsed += dt;
+    const jar = game.jar;
+    const speed = Math.max(380, W * 0.9);
+    if (keys.left || keys.right) { jar.targetX = null; jar.x += ((keys.right ? 1 : 0) - (keys.left ? 1 : 0)) * speed * dt; }
+    else if (jar.targetX !== null) { jar.x += (jar.targetX - jar.x) * Math.min(1, dt * 18); }
+    jar.x = Math.min(Math.max(jar.x, jar.w / 2), W - jar.w / 2);
+
+    game.spawnTimer -= dt;
+    if (game.spawnTimer <= 0) { spawn(); game.spawnTimer = Math.max(0.28, 0.85 - game.elapsed * 0.012) * (0.7 + Math.random() * 0.6); }
+
+    const jarTop = H - 18 - jar.h;
+    for (const it of game.items) {
+      it.y += it.vy * dt; it.spin += it.vr * dt;
+      const inX = Math.abs(it.x - jar.x) < jar.w / 2 + it.r * 0.4;
+      if (!it.done && inX && it.y + it.r > jarTop + 6 && it.y - it.r < jarTop + jar.h) {
+        it.done = true;
+        if (it.type === 'rock') {
+          game.lives--; game.shake = 1; burst(it.x, it.y, COLORS.rock, 18);
+          if (game.lives <= 0) { updateHud(); gameOver(); return; }
+        } else {
+          game.score += it.type === 'gold' ? 5 : 1;
+          burst(it.x, jarTop + 10, it.type === 'gold' ? COLORS.gold : COLORS.star, it.type === 'gold' ? 22 : 10);
+        }
+        updateHud();
+      }
+    }
+    game.items = game.items.filter(it => !it.done && it.y - it.r < H + 10);
+  }
+
+  function drawStar(x, y, r, rot, color, glow) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
+    ctx.shadowColor = color; ctx.shadowBlur = glow;
+    ctx.fillStyle = color; ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const rr = i % 2 ? r * 0.45 : r, a = -Math.PI / 2 + i * Math.PI / 5;
+      ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
+    }
+    ctx.closePath(); ctx.fill(); ctx.restore();
+  }
+
+  function drawRock(it) {
+    ctx.save(); ctx.translate(it.x, it.y);
+    // 꼬리 불꽃
+    const g = ctx.createLinearGradient(0, -it.r * 4, 0, 0);
+    g.addColorStop(0, 'rgba(208,113,79,0)'); g.addColorStop(1, 'rgba(255,150,90,0.55)');
+    ctx.fillStyle = g; ctx.beginPath();
+    ctx.moveTo(-it.r * 0.7, 0); ctx.lineTo(0, -it.r * 4.2); ctx.lineTo(it.r * 0.7, 0); ctx.fill();
+    ctx.rotate(it.spin);
+    ctx.fillStyle = COLORS.rock; ctx.beginPath();
+    for (let i = 0; i < 8; i++) {
+      const a = i * Math.PI / 4, rr = it.r * (i % 3 === 0 ? 0.82 : 1);
+      ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
+    }
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(60,24,14,0.45)';
+    ctx.beginPath(); ctx.arc(it.r * 0.25, -it.r * 0.2, it.r * 0.28, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(-it.r * 0.35, it.r * 0.3, it.r * 0.18, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  function drawJar() {
+    const jar = game.jar, x = jar.x, bottom = H - 18, top = bottom - jar.h, w = jar.w;
+    // 병 안에 쌓인 별빛
+    const fill = Math.min(1, game.score / 60);
+    if (fill > 0) {
+      const fh = (jar.h - 12) * fill;
+      const g = ctx.createLinearGradient(0, bottom - fh, 0, bottom);
+      g.addColorStop(0, 'rgba(255,215,94,0.25)'); g.addColorStop(1, 'rgba(255,215,94,0.7)');
+      ctx.fillStyle = g;
+      roundRect(x - w / 2 + 5, bottom - fh - 3, w - 10, fh, 8); ctx.fill();
+    }
+    ctx.lineWidth = 3; ctx.strokeStyle = COLORS.glass; ctx.fillStyle = 'rgba(127,214,200,0.12)';
+    roundRect(x - w / 2, top + 8, w, jar.h - 8, 14); ctx.fill(); ctx.stroke();
+    // 병목
+    ctx.fillStyle = COLORS.glass;
+    roundRect(x - w / 2 - 4, top, w + 8, 9, 4); ctx.fill();
+    // 반사광
+    ctx.strokeStyle = 'rgba(255,255,255,0.45)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(x - w / 2 + 9, top + 18); ctx.lineTo(x - w / 2 + 9, bottom - 12); ctx.stroke();
+  }
+
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath(); ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  }
+
+  function draw(time) {
+    ctx.save();
+    ctx.clearRect(0, 0, W, H);
+    if (game.shake > 0 && !reduceMotion) ctx.translate((Math.random() - 0.5) * 10 * game.shake, (Math.random() - 0.5) * 10 * game.shake);
+    for (const s of bgStars) {
+      const a = reduceMotion ? 0.6 : 0.35 + 0.35 * Math.sin(time / 700 + s.p);
+      ctx.fillStyle = `rgba(238,240,255,${a})`;
+      ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill();
+    }
+    // 땅
+    ctx.fillStyle = 'rgba(10,12,36,0.9)'; ctx.fillRect(0, H - 18, W, 18);
+    ctx.fillStyle = 'rgba(127,214,200,0.25)'; ctx.fillRect(0, H - 18, W, 1);
+
+    for (const it of game.items) {
+      if (it.type === 'rock') drawRock(it);
+      else drawStar(it.x, it.y, it.r, it.spin * 0.3, it.type === 'gold' ? COLORS.gold : COLORS.star, it.type === 'gold' ? 22 : 12);
+    }
+    for (const p of game.particles) {
+      ctx.globalAlpha = Math.max(0, p.life);
+      ctx.fillStyle = p.color; ctx.fillRect(p.x - 2, p.y - 2, 4, 4);
+    }
+    ctx.globalAlpha = 1;
+    drawJar();
+    ctx.restore();
+  }
+
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    update(dt); draw(now);
+    requestAnimationFrame(frame);
+  }
+
+  // 입력
+  const keyMap = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right' };
+  window.addEventListener('keydown', e => {
+    if (keyMap[e.code]) { keys[keyMap[e.code]] = true; e.preventDefault(); }
+    else if ((e.code === 'Space' || e.code === 'Enter') && game.state !== 'play' && document.activeElement.tagName !== 'BUTTON') { e.preventDefault(); start(); }
+  });
+  window.addEventListener('keyup', e => { if (keyMap[e.code]) keys[keyMap[e.code]] = false; });
+  window.addEventListener('blur', () => { keys.left = keys.right = false; });
+  function pointerTo(e) {
+    const r = canvas.getBoundingClientRect();
+    game.jar.targetX = e.clientX - r.left;
+  }
+  canvas.addEventListener('pointermove', pointerTo);
+  canvas.addEventListener('pointerdown', pointerTo);
+  document.getElementById('startBtn').addEventListener('click', start);
+  document.getElementById('againBtn').addEventListener('click', start);
+
+  window.addEventListener('resize', resize);
+  resize(); updateHud();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
